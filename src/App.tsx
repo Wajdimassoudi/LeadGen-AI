@@ -23,8 +23,8 @@ export default function App() {
     try {
       const results = await generateLeads(query);
       setLeads(results);
-    } catch (err) {
-      setError("Failed to generate leads. Please try again.");
+    } catch (err: any) {
+      setError(err.message || "Failed to generate leads. Please try again.");
       console.error(err);
     } finally {
       setIsLoading(false);

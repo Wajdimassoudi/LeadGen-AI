@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
-import OpenAI from "openai";
+import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -11,16 +11,16 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Initialize OpenAI client
-const getOpenAI = () => {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || apiKey === "YOUR_OPENAI_API_KEY") {
-    throw new Error("OPENAI_API_KEY is missing or not set. Please add it to the Secrets panel in AI Studio settings (Settings -> Secrets -> add OPENAI_API_KEY).");
+// Initialize Gemini client
+const getGemini = () => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set. Please ensure it's in your Secrets panel.");
   }
-  return new OpenAI({ apiKey });
+  return new GoogleGenAI({ apiKey });
 };
 
-// API Endpoint for generating leads
+// API Endpoint for generating leads using Gemini
 app.post("/api/generate-leads", async (req, res) => {
   console.log("Generating leads for query:", req.body.query);
   try {
@@ -29,52 +29,47 @@ app.post("/api/generate-leads", async (req, res) => {
       return res.status(400).json({ error: "Query is required" });
     }
 
-    const openai = getOpenAI();
-    
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `You are a professional lead generation assistant. 
-          Your task is to find real or highly plausible companies and their contact emails based on the user's request.
-          The user might search in Arabic, English, or Italian. Handle all languages correctly.
-          
-          REQUIRED OUTPUT FORMAT:
-          You MUST return a valid JSON object with a single key "leads".
-          "leads" must be an array of objects.
-          Each object must contain "email" (string) and "company_name" (string).
-          
-          Example:
-          {
-            "leads": [
-              { "email": "contact@azienda.it", "company_name": "Azienda Agricola Rossi" }
-            ]
-          }
-          
-          Return between 10 to 15 high-quality leads.
-          Only return the JSON object, no other text.`
+    const genAI = getGemini() as any;
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-2.0-flash",
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            leads: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  email: { type: Type.STRING },
+                  company_name: { type: Type.STRING },
+                },
+                required: ["email", "company_name"],
+              },
+            },
+          },
+          required: ["leads"],
         },
-        {
-          role: "user",
-          content: query
-        }
-      ],
-      response_format: { type: "json_object" }
+      }
     });
+    
+    const prompt = `You are a professional lead generation assistant. 
+    Find real or highly plausible companies and their contact emails based on the following search: "${query}".
+    Return exactly 15 leads in JSON format.`;
 
-    const content = response.choices[0].message.content;
-    if (!content) throw new Error("No content received from OpenAI");
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const content = response.text();
     
     const parsed = JSON.parse(content);
-    const results = parsed.leads || parsed.companies || (Array.isArray(parsed) ? parsed : []);
+    res.json(parsed.leads || []);
     
-    res.json(results);
   } catch (error: any) {
-    console.error("OpenAI/Server Error:", error);
+    console.error("Gemini/Server Error:", error);
     res.status(500).json({ 
-      error: error.message || "Internal Server Error",
-      details: "Check if your OPENAI_API_KEY is correctly set in the Secrets panel."
+      error: "AI search failed. Please try a different query or check your connection.",
+      details: error.message
     });
   }
 });

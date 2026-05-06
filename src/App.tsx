@@ -241,7 +241,7 @@ export default function App() {
         <div className="flex items-center gap-6">
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> 
-            AI Engine: OpenAI GPT-4o
+            AI Engine: Gemini 1.5 Flash
           </span>
           <span>Format: CSV UTF-8</span>
         </div>
